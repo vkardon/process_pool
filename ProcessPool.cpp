@@ -1,0 +1,489 @@
+//
+// ProcessPool.cpp
+//
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/stat.h>       // stat
+#include <assert.h>         // assert
+#include <sys/mman.h>       // mmap
+#include <iostream>         // std::cout
+#include "ProcessPool.hpp"
+
+//
+// Utility class to fork children processes and wait for them to exit
+//
+ProcessPool::~ProcessPool()
+{
+    // If we are parent then delete children completion status array
+    // in shared memory (if we have any)
+    if(IsParent())
+        DeleteCompletionStatusArray();
+}
+
+bool ProcessPool::PreForkChildren(int totalChildren)
+{
+    mChildrenPIDs.clear();
+    mChildIndex = -1;
+    mParentPID = getpid();
+    mOld_SIGCHLD_handler = nullptr;
+
+    // Delete children completion status array since number of children might changes
+    DeleteCompletionStatusArray();
+
+    bool result = false; // Initially
+    while(true)
+    {
+        // Ignore the SIGCHLD to prevent children from transforming into
+        // zombies so we don't need to wait and reap them.
+        if(!SetSigAction(SIGCHLD, SIG_IGN, &mOld_SIGCHLD_handler))
+        {
+            std::string errmsg = strerror(errno);
+            ERRORMSG("sigaction(SIGCHLD) failed because " << errmsg);
+            break;
+        }
+
+        // Create children completion status array in shared memory
+        if(!CreateCompletionStatusArray(totalChildren))
+        {
+            ERRORMSG("Couldn't create children completion status array in shared memory");
+            break;
+        }
+
+        result = true;
+        break;
+    }
+
+    // If we failed then clean up
+    if(!result)
+        PostForkChildren();
+
+    return result;
+}
+
+void ProcessPool::PostForkChildren()
+{
+    // Restore the original SIGCHLD handler
+    if(mOld_SIGCHLD_handler && !SetSigAction(SIGCHLD, mOld_SIGCHLD_handler))
+    {
+        std::string errmsg = strerror(errno);
+        ERRORMSG("sigaction(SIGCHLD old) failed because " << errmsg);
+    }
+
+    // Delete children completion status array in shared memory (if we have any)
+    DeleteCompletionStatusArray();
+}
+
+// Fork totalChildren number of children and wait for them to complete.
+// Note: We ignore SIGCHLD signal to prevent children from transforming into zombies
+bool ProcessPool::ForkChildren(int totalChildren, int maxConcurrentChildren)
+{
+    assert(IsParent());
+
+    // Initial setup, create original signal handlers
+    if(!PreForkChildren(totalChildren))
+        return false;
+
+    // Vector of running children ids (initialized with default constructor)
+    assert(mChildrenPIDs.empty());
+    mChildrenPIDs.resize(totalChildren, ChildPID());
+
+    // Fork child processes...
+    int maxChildCount = std::min(totalChildren, maxConcurrentChildren);
+    int childCount = 0;  // Number or currently running children
+
+    INFOMSG("Forking " << totalChildren << " children processes using "
+            << maxChildCount << " processors in parallel");
+
+    // Pre-fork notification - for profiling, etc.
+    OnNotify(NOTIFY_TYPE::PRE_FORK);
+
+    bool result = true;
+    for(int i = 0; i < totalChildren; i++)
+    {
+        if(childCount == maxChildCount)
+        {
+            // We are running maximum number of children.
+            // We have to wait for some child to complete before continue.
+            INFOMSG("childCount=" << childCount << ", maxChildCount=" << maxChildCount
+                    << ": waiting for any child to complete before forking another one");
+
+            bool isCrashed = false;
+            pid_t completedChildPID = WaitForChild(&isCrashed);
+            if(isCrashed)
+            {
+                result = false;
+                break;
+            }
+            else if(completedChildPID == 0)
+                childCount = 0; // All children are done
+            else
+                childCount--;   // One child is done
+
+            // We can fork another child now
+            INFOMSG("childCount=" << childCount << ", maxChildCount=" << maxChildCount
+                    << ": we can now fork another child");
+        }
+
+        // Flush all parent's open output streams
+        fflush(nullptr);
+
+        // Fork a child
+        pid_t childPID = fork();
+
+        if(childPID < 0)
+        {
+            std::string errmsg = strerror(errno);
+            ERRORMSG("Parent " << mParentPID << " couldn't fork child " << i << " because " << errmsg);
+            result = false;
+            break;
+        }
+        else if(childPID == 0)
+        {
+            // Running as a child.
+            mChildIndex = i;
+            INFOMSG("Child " << mChildIndex << " (" << getpid() << ") is running");
+            return true;
+        }
+
+        // Running as a parent...
+        INFOMSG("Parent " << mParentPID << " forked child " << i << " (" << childPID << ")");
+
+        // Child forking notification - for profiling, etc.
+        OnNotify(NOTIFY_TYPE::CHILD_FORK);
+
+        mChildrenPIDs[i].pid = childPID;
+        mChildrenPIDs[i].status = CHILD_STATUS::RUNNING;
+
+        childCount++;
+    }
+
+    // We must be parent if we are here
+    assert(IsParent());
+
+    if(!result)
+    {
+        // Something went wrong
+        KillChildren();         // Terminate children we've started
+        PostForkChildren();     // Restore the original signal handlers
+    }
+    else
+    {
+        // Post-fork notification - for profiling, etc.
+        OnNotify(NOTIFY_TYPE::POST_FORK);
+
+        // Wait for all children to complete if we have to
+        if(mWaitForChildren)
+            result = WaitForChildren();
+    }
+
+    return result;
+}
+
+// Wait for children processes to complete
+bool ProcessPool::WaitForChildren()
+{
+    // Running as the parent. Wait for children to complete run.
+    INFOMSG("Waiting for children processes to complete...");
+
+    // Wait for all children to complete or any child crashed
+    bool isCrashed = false;
+
+    while(true)
+    {
+        if(WaitForChild(&isCrashed) == 0)
+            break;  // All children are done
+        else if(isCrashed)
+            break;  // Some child has crashed
+    }
+
+    if(!isCrashed)
+    {
+        // At this point all children are either exited or alive but idle.
+        INFOMSG("All children completed");
+
+        // Send "All children done" notification - for profiling, clean up, etc.
+        OnNotify(NOTIFY_TYPE::CHILDREN_DONE);
+    }
+
+    // Terminate idle children processes (or running processes if we crashed)
+    KillChildren();
+
+    // Restore the original signal handlers
+    PostForkChildren();
+    return !isCrashed;
+}
+
+void ProcessPool::Exit(bool status, bool keepIdle /*= false*/)
+{
+    if(IsParent())
+    {
+        ERRORMSG("This method is not allowed in the parent process");
+        return;
+    }
+
+    // Flush all open streams to make sure we don't miss any output
+    fflush(nullptr);
+
+    // If child is succeeded (status == true), then update child's
+    // done flag and enter idle mode if required.
+    // If child is failed (status != true), then just exit here.
+    // Once parent sees that child is no longer running, it will
+    // treat it as crashed and hence terminate remaining children.
+    if(status)
+    {
+        assert(mIsChildDone);
+        mIsChildDone[mChildIndex] = 1; // TODO: Do we need to do this under lock?
+
+        // Do we need to exit child now OR keep it it looping (idle)
+        // until terminated (by parent) or if parent is no longer alive?
+        if(keepIdle)
+        {
+            // If child uses shared memory or other shared resourced then we need
+            // to keep the child alive in order for parent (or siblings) to have
+            // access to it.Once the child exits, the system might release
+            // that shared memory so it will not be available for others.
+            while(IsProcessAlive(mParentPID))
+                usleep(500000); // 500 ms (half second)
+
+            // If we are here then parent is no longer alive (crashed or terminated).
+            INFOMSG("Child " << mChildIndex << " (" << getpid() << ")"
+                    << " exiting because parent " << mParentPID << " is no longer alive.");
+        }
+    }
+    else
+    {
+        ERRORMSG("Child " << mChildIndex << " (" << getpid() << ") has failed");
+    }
+
+    // Exit child with _exit() to tell the OS to ignore the its completion
+    _exit(1);
+}
+
+/*-------------------------------------------------------------------------*
+| Name:  KillChildren()
+| Desc:  Kill all running children and wait for them to exit.
+*--------------------------------------------------------------------------*/
+void ProcessPool::KillChildren()
+{
+    if(mChildrenPIDs.empty())
+        return; // No running children processes to terminate
+
+    // Kill all the running children...if we have any
+    bool haveRunningChildren = false;
+    int childIndex = 0;
+
+    // Kill all running or idle children
+    for(ChildPID& child : mChildrenPIDs)
+    {
+        if(child.status != CHILD_STATUS::NOT_RUNNING)
+        {
+            if(IsProcessAlive(child.pid))
+            {
+                haveRunningChildren = true;
+                INFOMSG("Parent " << getpid() << " terminates child " << childIndex << " (" << child.pid << ")");
+                kill(child.pid, SIGKILL /*9*/);
+            }
+            else
+            {
+                child.status = CHILD_STATUS::NOT_RUNNING;
+            }
+        }
+        childIndex++;
+    }
+
+    if(!haveRunningChildren)
+        return;
+
+    // Wait until all children are gone
+    const int SLEEP_MICROSEC = 10000; // 10 ms
+
+    while(true)
+    {
+        haveRunningChildren = false;
+
+        for(ChildPID& child : mChildrenPIDs)
+        {
+            if(child.status != CHILD_STATUS::NOT_RUNNING)
+            {
+                if(IsProcessAlive(child.pid))
+                    haveRunningChildren = true;
+                else
+                    child.status = CHILD_STATUS::NOT_RUNNING;
+            }
+        }
+
+        // Are there any running children?
+        if(!haveRunningChildren)
+            break;
+
+        // Some children are still running
+        usleep(SLEEP_MICROSEC); // sleep for SLEEP_MICROSEC and check again
+    }
+}
+
+// Wait for child to complete its task using high-speed loop
+// Returns:
+//   <process id> and "crashed status" of the completed child
+//   0  if all children completed
+pid_t ProcessPool::WaitForChild(bool* isCrashed)
+{
+    // We are going to use a high speed poll loop to watch completion status.
+    // This will assure microseconds class restarts rather than using
+    // exit()/wait3() approach, which requires both full shutdown of the child
+    // and parent rescheduling by the operating system. Since children don't
+    // need to be reaped, we can either kill() them later or have them exit
+    // with _exit() to tell the OS to ignore theirs completion.
+    assert(IsParent());
+    assert(mIsChildDone);
+
+    // Pool loop frequency
+    const int SLEEP_MICROSEC = 10000;   // 10 ms
+
+    // How often to check for crashed children
+    const int CRASH_TEST_INTERVAL  = 10;  // 100 ms (10 * SLEEP_MICROSEC)
+
+    size_t childrenCount = mChildrenPIDs.size();
+    pid_t childPID = 0;
+
+    // If none of the children completed within FIRST_CRASH_TEST_INTERVAL seconds,
+    // then check if any of them crashes.
+    // Note: We will do ongoing test in NEXT_CRASH_TEST_INTERVAL seconds
+    int crashTestTimer = CRASH_TEST_INTERVAL;
+
+    bool haveRunningChildren = false;
+
+    // Do we have any completed children?
+    while(true)
+    {
+        // Check completion status of the every child
+        haveRunningChildren = false;
+
+        for(size_t childIndex = 0; childIndex < childrenCount; childIndex++)
+        {
+            if(mChildrenPIDs[childIndex].status != CHILD_STATUS::RUNNING)
+                continue; // Skip the child that is not running or done
+
+            childPID = mChildrenPIDs[childIndex].pid;
+
+            if(mIsChildDone[childIndex])
+            {
+                // The child is done with its task.
+                mChildrenPIDs[childIndex].status = CHILD_STATUS::DONE;
+
+                // Note: The child might exited or still be idle. But in
+                // either case, it has completed with its task.
+                INFOMSG("Child " << childIndex << " (" << childPID << ") complete");
+                *isCrashed = false;
+                return childPID;
+            }
+
+            // If no children completed within crashTestTimer seconds, then
+            // check if any of them have crashed
+            if(crashTestTimer == 0 && !IsProcessAlive(childPID))
+            {
+                // The child has crashed or failed (exited with an error)
+                // TODO: Should we have a different CHILD_STATUS for a crashed child?
+                mChildrenPIDs[childIndex].status = CHILD_STATUS::DONE;
+
+                ERRORMSG("Child " << childIndex << " (" << childPID << ") is no longer running (crashed or failed)");
+                *isCrashed = true;
+                return childPID;
+            }
+
+            // The child is still running
+            haveRunningChildren = true;
+        }
+
+        // Do we have any running children?
+        if(!haveRunningChildren)
+            break; // All children are done
+
+        // Reset the crash timer if expired
+        if(crashTestTimer == 0)
+            crashTestTimer = CRASH_TEST_INTERVAL;
+
+        // Some children are still running
+        usleep(SLEEP_MICROSEC); // sleep for SLEEP_MICROSEC and check again
+        crashTestTimer--;
+    }
+
+    // All children are done
+    *isCrashed = false;
+    return 0;
+}
+
+bool ProcessPool::CreateCompletionStatusArray(int totalChildren)
+{
+    // Clean up first
+    DeleteCompletionStatusArray();
+
+    assert(mIsChildDone == nullptr);
+    assert(mIsChildDoneSize == 0);
+
+    // Get a shared memory
+    size_t len = sizeof(unsigned char) * totalChildren;
+    void* addr = ::mmap(nullptr, len, PROT_READ | PROT_WRITE,
+            MAP_SHARED | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+
+    if(addr == MAP_FAILED)
+    {
+        std::string errmsg = strerror(errno);
+        ERRORMSG("mmap for " << len << " bytes failed with error \"" << errmsg << "\"");
+        return false;
+    }
+
+    // Create children completion status array in a shared memory
+    mIsChildDone = new (addr) unsigned char[totalChildren]{};
+    mIsChildDoneSize = len;
+    return true;
+}
+
+bool ProcessPool::DeleteCompletionStatusArray()
+{
+    if(mIsChildDone == nullptr)
+    {
+        mIsChildDoneSize = 0;
+        return true; // Nothing to delete
+    }
+
+    bool result = true;
+    if(::munmap(mIsChildDone, mIsChildDoneSize) < 0)
+    {
+        std::string errmsg = strerror(errno);
+        ERRORMSG("munmap failed with error \"" << errmsg << "\"");
+        result = false;
+    }
+
+    mIsChildDone = nullptr;
+    mIsChildDoneSize = 0;
+    return result;
+}
+
+bool ProcessPool::SetSigAction(int signum, sighandler_t handler, sighandler_t* oldHandler /*= nullptr*/)
+{
+    struct sigaction sa, old_sa;
+    sa.sa_handler = handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART; // To restart interrupted system calls
+
+    int ret = sigaction(signum, &sa, &old_sa);
+    if(ret == 0 && oldHandler)
+        *oldHandler = old_sa.sa_handler;
+    return (ret == 0);
+}
+
+bool ProcessPool::IsProcessAlive(pid_t pid)
+{
+//    // Assume we have proc file system
+//    char pidpath[32]{};
+//    sprintf(pidpath, "/proc/%d", pid);
+//    struct stat pidstat;
+//    int rc = stat(pidpath, &pidstat);
+//    if(rc == -1 && errno != 0)
+//        return false;
+//    return true;
+
+    return (kill(pid, 0) == 0);
+}
+
