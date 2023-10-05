@@ -37,22 +37,22 @@ void TestProcessPool()
 
 void TestProcessQueue()
 {
-    struct Request
+    struct Args
     {
-        Request() = default;
-        Request(int numberIn) : number(numberIn) {}
+        Args() = default;
+        Args(int numberIn) : number(numberIn) {}
         int number{0};
     };
 
     // Request processing routine
-    void (*fptr)(const Request&) = [](const Request& req)
+    void (*fptr)(const Args&) = [](const Args& args)
     {
         usleep((random() % 5) * 1000); // Add a random 0-4 ms delay
-        std::cout << "[pid=" << getpid() << "] Got request: " << req.number << std::endl;
+        std::cout << "[pid=" << getpid() << "] Got request: " << args.number << std::endl;
     };
 
     // Create process queue
-    ProcessQueue<Request> procQueue;
+    ProcessQueue<Args> procQueue;
     if(!procQueue.Create(8, fptr))  // process#
     {
         std::cout << ">>> " << __func__ << ": ProcessQueue::Create() failed" << std::endl;
@@ -62,8 +62,8 @@ void TestProcessQueue()
     // Add requests to process queue
     for(int i = 0; i < 1000; i++)
     {
-        Request req(i);
-        procQueue.AddRequest(req);
+        Args args(i);
+        procQueue.Post(args);
     }
 
     // Wait for process queue to complete all requests

@@ -21,7 +21,7 @@ ProcessPool::~ProcessPool()
         DeleteCompletionStatusArray();
 }
 
-bool ProcessPool::PreForkChildren(int totalChildren)
+bool ProcessPool::PreFork(int totalChildren)
 {
     mChildrenPIDs.clear();
     mChildIndex = -1;
@@ -56,12 +56,12 @@ bool ProcessPool::PreForkChildren(int totalChildren)
 
     // If we failed then clean up
     if(!result)
-        PostForkChildren();
+        PostFork();
 
     return result;
 }
 
-void ProcessPool::PostForkChildren()
+void ProcessPool::PostFork()
 {
     // Restore the original SIGCHLD handler
     if(mOld_SIGCHLD_handler && !SetSigAction(SIGCHLD, mOld_SIGCHLD_handler))
@@ -76,12 +76,12 @@ void ProcessPool::PostForkChildren()
 
 // Fork totalChildren number of children and wait for them to complete.
 // Note: We ignore SIGCHLD signal to prevent children from transforming into zombies
-bool ProcessPool::ForkChildren(int totalChildren, int maxConcurrentChildren)
+bool ProcessPool::Fork(int totalChildren, int maxConcurrentChildren)
 {
     assert(IsParent());
 
     // Initial setup, create original signal handlers
-    if(!PreForkChildren(totalChildren))
+    if(!PreFork(totalChildren))
         return false;
 
     // Vector of running children ids (initialized with default constructor)
@@ -109,7 +109,7 @@ bool ProcessPool::ForkChildren(int totalChildren, int maxConcurrentChildren)
                     << ": waiting for any child to complete before forking another one");
 
             bool isCrashed = false;
-            pid_t completedChildPID = WaitForChild(&isCrashed);
+            pid_t completedChildPID = WaitForOne(&isCrashed);
             if(isCrashed)
             {
                 result = false;
@@ -164,8 +164,8 @@ bool ProcessPool::ForkChildren(int totalChildren, int maxConcurrentChildren)
     if(!result)
     {
         // Something went wrong
-        KillChildren();         // Terminate children we've started
-        PostForkChildren();     // Restore the original signal handlers
+        KillAll();         // Terminate children we've started
+        PostFork();     // Restore the original signal handlers
     }
     else
     {
@@ -173,15 +173,15 @@ bool ProcessPool::ForkChildren(int totalChildren, int maxConcurrentChildren)
         OnNotify(NOTIFY_TYPE::POST_FORK);
 
         // Wait for all children to complete if we have to
-        if(mWaitForChildren)
-            result = WaitForChildren();
+        if(mWaitForAll)
+            result = WaitForAll();
     }
 
     return result;
 }
 
 // Wait for children processes to complete
-bool ProcessPool::WaitForChildren()
+bool ProcessPool::WaitForAll()
 {
     // Running as the parent. Wait for children to complete run.
     INFOMSG("Waiting for children processes to complete...");
@@ -191,7 +191,7 @@ bool ProcessPool::WaitForChildren()
 
     while(true)
     {
-        if(WaitForChild(&isCrashed) == 0)
+        if(WaitForOne(&isCrashed) == 0)
             break;  // All children are done
         else if(isCrashed)
             break;  // Some child has crashed
@@ -207,10 +207,10 @@ bool ProcessPool::WaitForChildren()
     }
 
     // Terminate idle children processes (or running processes if we crashed)
-    KillChildren();
+    KillAll();
 
     // Restore the original signal handlers
-    PostForkChildren();
+    PostFork();
     return !isCrashed;
 }
 
@@ -261,10 +261,10 @@ void ProcessPool::Exit(bool status, bool keepIdle /*= false*/)
 }
 
 /*-------------------------------------------------------------------------*
-| Name:  KillChildren()
+| Name:  KillAll()
 | Desc:  Kill all running children and wait for them to exit.
 *--------------------------------------------------------------------------*/
-void ProcessPool::KillChildren()
+void ProcessPool::KillAll()
 {
     if(mChildrenPIDs.empty())
         return; // No running children processes to terminate
@@ -326,7 +326,7 @@ void ProcessPool::KillChildren()
 // Returns:
 //   <process id> and "crashed status" of the completed child
 //   0  if all children completed
-pid_t ProcessPool::WaitForChild(bool* isCrashed)
+pid_t ProcessPool::WaitForOne(bool* isCrashed)
 {
     // We are going to use a high speed poll loop to watch completion status.
     // This will assure microseconds class restarts rather than using

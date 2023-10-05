@@ -26,7 +26,7 @@ public:
     // wait for any child process to exit before forking new one.
     bool Create(int procCount, int maxConcurrentProcs)
     {
-        return ForkChildren(procCount, maxConcurrentProcs);
+        return Fork(procCount, maxConcurrentProcs);
     }
 
     // Exit/Idle completed child:
@@ -53,7 +53,7 @@ public:
 
 protected:
     // Wait for children processes to complete
-    bool WaitForChildren();
+    bool WaitForAll();
 
     bool IsProcessAlive(pid_t pid);
 
@@ -78,20 +78,20 @@ protected:
 
 private:
     // Fork totalChildren number of children and wait for them to complete
-    bool ForkChildren(int totalChildren, int maxConcurrentChildren);
+    bool Fork(int totalChildren, int maxConcurrentChildren);
 
-    bool PreForkChildren(int totalChildren);
-    void PostForkChildren();
+    bool PreFork(int totalChildren);
+    void PostFork();
 
     // Wait for child to complete its task using high-speed loop
     // Returns:
     //   <process id> and "crashed status" of the completed child
     //    0  if all children completed
     //
-    pid_t WaitForChild(bool* isCrashed);
+    pid_t WaitForOne(bool* isCrashed);
 
     // Kill all running children processes
-    void KillChildren();
+    void KillAll();
 
     // Create/Delete children completion status array in shared memory
     bool CreateCompletionStatusArray(int totalChildren);
@@ -117,7 +117,7 @@ protected:
     std::vector<ChildPID> mChildrenPIDs;
 
     // Block parent until all children complete
-    bool mWaitForChildren = true;
+    bool mWaitForAll = true;
 };
 
 //
@@ -131,7 +131,7 @@ protected:
          std::stringstream buf; \
          buf << "[INFO][" << __FILE__ << ":" << __LINE__ << "] " << __func__ << ": " << msg; \
          OnInfo(buf.str()); \
-    } while(0)
+    } while(0);
 #endif // INFOMSG
 
 #ifndef ERRORMSG
@@ -140,7 +140,7 @@ protected:
          std::stringstream buf; \
          buf << "[ERROR][" << __FILE__ << ":" << __LINE__ << "] " << __func__ << ": " << msg; \
          OnError(buf.str()); \
-    } while(0)
+    } while(0);
 #endif // ERRORMSG
 
 #endif // _PROCESS_POOL_HPP_

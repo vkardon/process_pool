@@ -14,7 +14,7 @@
 //
 // Utility class to create queue of worker processes
 //
-template<class REQ>
+template<class ARGS>
 class ProcessQueue : public ProcessPool
 {
     // Helper class to lock/unlock QueueLock
@@ -58,7 +58,7 @@ public:
     // in Request Queue while waiting for being processed.
     ProcessQueue(unsigned int maxRequestCount = 1000000)
     {
-        mWaitForChildren = false;
+        mWaitForAll = false;
         mRequestQueueSize = (maxRequestCount ? sizeof(Node) * maxRequestCount + sizeof(RequestQueue) : 0);
     }
     virtual ~ProcessQueue() { Destroy(); }
@@ -68,10 +68,10 @@ public:
     ProcessQueue& operator=(const ProcessQueue&) = delete;
 
     // Fork procCount number of child processes and DON'T wait for them to complete.
-    bool Create(int procCount, void (*fptr)(const REQ&));
+    bool Create(int procCount, void (*fptr)(const ARGS&));
 
     // Add request to RequestQueue
-    bool AddRequest(const REQ& req);
+    bool Post(const ARGS& args);
 
     // Wait for Request Queue became empty
     bool WaitForCompletion();
@@ -80,7 +80,7 @@ public:
     void Destroy();
 
 private:
-    struct Node : public REQ
+    struct Node : public ARGS
     {
         Node* next{nullptr};
     };
@@ -109,8 +109,8 @@ private:
 };
 
 // Fork procCount number of child processes and DON'T wait for them to complete.
-template<class REQ>
-bool ProcessQueue<REQ>::Create(int procCount, void (*fptr)(const REQ&))
+template<class ARGS>
+bool ProcessQueue<ARGS>::Create(int procCount, void (*fptr)(const ARGS&))
 {
     if(!CreateRequestQueue())
         return false;
@@ -153,8 +153,8 @@ bool ProcessQueue<REQ>::Create(int procCount, void (*fptr)(const REQ&))
     return true;
 }
 
-template<class REQ>
-bool ProcessQueue<REQ>::AddRequest(const REQ& req)
+template<class ARGS>
+bool ProcessQueue<ARGS>::Post(const ARGS& args)
 {
     assert(IsParent());
 
@@ -194,7 +194,7 @@ bool ProcessQueue<REQ>::AddRequest(const REQ& req)
     }
 
     // Copy input request
-    (REQ&)(*node) = req;
+    (ARGS&)(*node) = args;
 
     // Append new node to the tail
     Node* tail = mRequestQueue->tail;
@@ -214,8 +214,8 @@ bool ProcessQueue<REQ>::AddRequest(const REQ& req)
     return true;
 }
 
-template<class REQ>
-typename ProcessQueue<REQ>::Node* ProcessQueue<REQ>::GetNextRequest()
+template<class ARGS>
+typename ProcessQueue<ARGS>::Node* ProcessQueue<ARGS>::GetNextRequest()
 {
     assert(IsChild());
 
@@ -240,8 +240,8 @@ typename ProcessQueue<REQ>::Node* ProcessQueue<REQ>::GetNextRequest()
     return node;
 }
 
-template<class REQ>
-void ProcessQueue<REQ>::FreeRequest(ProcessQueue::Node* node)
+template<class ARGS>
+void ProcessQueue<ARGS>::FreeRequest(ProcessQueue::Node* node)
 {
     assert(IsChild());
 
@@ -260,8 +260,8 @@ void ProcessQueue<REQ>::FreeRequest(ProcessQueue::Node* node)
     mRequestQueue->free = node;
 }
 
-template<class REQ>
-bool ProcessQueue<REQ>::CreateRequestQueue()
+template<class ARGS>
+bool ProcessQueue<ARGS>::CreateRequestQueue()
 {
     assert(IsParent());
 
@@ -295,8 +295,8 @@ bool ProcessQueue<REQ>::CreateRequestQueue()
     return true;
 }
 
-template<class REQ>
-void ProcessQueue<REQ>::DeleteRequestQueue()
+template<class ARGS>
+void ProcessQueue<ARGS>::DeleteRequestQueue()
 {
     assert(IsParent());
 
@@ -312,8 +312,8 @@ void ProcessQueue<REQ>::DeleteRequestQueue()
     mRequestQueue = nullptr;
 }
 
-template<class REQ>
-bool ProcessQueue<REQ>::WaitForCompletion()
+template<class ARGS>
+bool ProcessQueue<ARGS>::WaitForCompletion()
 {
     assert(IsParent());
 
@@ -338,19 +338,19 @@ bool ProcessQueue<REQ>::WaitForCompletion()
     }
 }
 
-template<class REQ>
-void ProcessQueue<REQ>::Destroy()
+template<class ARGS>
+void ProcessQueue<ARGS>::Destroy()
 {
     if(IsParent() && mRequestQueue)
     {
         mRequestQueue->stop = true;
-        WaitForChildren();
+        WaitForAll();
         DeleteRequestQueue();
     }
 }
 
-template<class REQ>
-bool ProcessQueue<REQ>::HasCrashedChildren()
+template<class ARGS>
+bool ProcessQueue<ARGS>::HasCrashedChildren()
 {
     // Check for crash children every CRASH_TEST_INTERVAL seconds
     if(time(nullptr) - mCrashTestTimer < CRASH_TEST_INTERVAL)
