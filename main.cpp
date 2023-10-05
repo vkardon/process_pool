@@ -9,6 +9,8 @@
 
 void TestProcessPool()
 {
+    // Note: Create() is blocked for a parent process, it doesn't 
+    // return until all child processes stopped.
     ProcessPool procPool;
     if(!procPool.Create(8, 4)) // process#, concurrent process#
     {
@@ -31,12 +33,19 @@ void TestProcessPool()
         procPool.Exit(true);
     }
 
-    // OK, we are parent. All children processes complete.
+    // If we are here then we must be a parent process and all child processes 
+    // completed (either exited or crushed).
     std::cout << ">>> " << __func__ << ": End Of TestProcessPool" << std::endl;
 }
 
 void TestProcessQueue()
 {
+    // Arguments to be send to the routine that will be executed
+    // by child processes. 
+    // Note: Arguments will be copied to a shared memory in order
+    // to be accessable by all processes. Don't include complex 
+    // types that internally allocates memory since that allocation(s)
+    // might be inaccessible in child processes.
     struct Args
     {
         Args() = default;
@@ -44,7 +53,7 @@ void TestProcessQueue()
         int number{0};
     };
 
-    // Request processing routine
+    // This it routine that will be executed by child processes
     void (*fptr)(const Args&) = [](const Args& args)
     {
         usleep((random() % 5) * 1000); // Add a random 0-4 ms delay
@@ -59,14 +68,14 @@ void TestProcessQueue()
         return;
     }
 
-    // Add requests to process queue
+    // Post requests to process queue
     for(int i = 0; i < 1000; i++)
     {
         Args args(i);
         procQueue.Post(args);
     }
 
-    // Wait for process queue to complete all requests
+    // Wait until all requests completed
     procQueue.WaitForCompletion();
     procQueue.Destroy();
 
