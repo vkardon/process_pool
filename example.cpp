@@ -9,6 +9,8 @@
 
 void TestProcessPool()
 {
+    std::cout << ">>> " << __func__ << ": Beginning of ProcessPool test" << std::endl;
+
     // Note: Create() is blocked for a parent process, it doesn't 
     // return until all child processes stopped.
     ProcessPool procPool;
@@ -35,11 +37,13 @@ void TestProcessPool()
 
     // If we are here then we must be a parent process and all child processes 
     // completed (either exited or crushed).
-    std::cout << ">>> " << __func__ << ": End Of TestProcessPool" << std::endl;
+    std::cout << ">>> " << __func__ << ": End of ProcessPool test" << std::endl;
 }
 
 void TestProcessQueue()
 {
+    std::cout << ">>> " << __func__ << ": Beginning of ProcessQueue test" << std::endl;
+
     // Arguments to be send to the routine that will be executed
     // by child processes. 
     // Note: Arguments will be copied to a shared memory in order
@@ -79,7 +83,7 @@ void TestProcessQueue()
 
     // Wait until all requests completed
     procQueue.WaitForCompletion();
-    std::cout << ">>> " << __func__ << ": End Of TestProcessQueue part 1" << std::endl;
+    std::cout << ">>> " << __func__ << ": End of ProcessQueue test part 1" << std::endl;
 
     // Post more requests to process queue
     for(int i = 0; i < 10; i++)
@@ -92,16 +96,12 @@ void TestProcessQueue()
     procQueue.WaitForCompletion();
 
     // We are done with Process Queue test
-    std::cout << ">>> " << __func__ << ": End Of TestProcessQueue part 2" << std::endl;
+    std::cout << ">>> " << __func__ << ": End of ProcessQueue test part 2" << std::endl;
 }
 
 int main()
 {
     TestProcessPool();
-
-    std::cout << ">>> " << __func__ << ": Sleep for a few seconds before the next test..." << std::endl;
-    sleep(5);
-
     TestProcessQueue();
     return 0;
 }
