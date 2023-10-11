@@ -24,9 +24,10 @@ public:
     // Fork procCount number of processes and wait for them to complete.
     // If procCount bigger then maxConcurrentProcs, then first
     // wait for any child process to exit before forking new one.
-    bool Create(int procCount, int maxConcurrentProcs)
+    // If maxConcurrentProcs is 0 then procCount will be used.
+    bool Create(int procCount, int maxConcurrentProcs=0)
     {
-        return Fork(procCount, maxConcurrentProcs);
+        return Fork(procCount, (maxConcurrentProcs > 0 ? maxConcurrentProcs : procCount));
     }
 
     // Exit/Idle completed child:
@@ -58,7 +59,7 @@ protected:
     bool IsProcessAlive(pid_t pid);
 
     // Logging
-    virtual void OnInfo(const std::string& msg) const { std::cout << msg << std::endl; }
+    virtual void OnInfo(const std::string& msg) const { /*std::cout << msg << std::endl;*/ }
     virtual void OnError(const std::string& msg) const { std::cout << msg << std::endl; }
 
     // Child process status enumerator

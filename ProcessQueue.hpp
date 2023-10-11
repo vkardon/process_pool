@@ -117,7 +117,7 @@ bool ProcessQueue<ARGS>::Create(int procCount, void (*fptr)(const ARGS&))
 
     // Create process pool with procCount number of children processes
     // but don't wait for them to complete.
-    if(!ProcessPool::Create(procCount, procCount))
+    if(!ProcessPool::Create(procCount))
     {
         DeleteRequestQueue();
         return false;

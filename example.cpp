@@ -12,7 +12,7 @@ void TestProcessPool()
     // Note: Create() is blocked for a parent process, it doesn't 
     // return until all child processes stopped.
     ProcessPool procPool;
-    if(!procPool.Create(8, 4)) // process#, concurrent process#
+    if(!procPool.Create(4)) // process#
     {
         std::cout << ">>> " << __func__ << ": ProcessPool::Create() failed" << std::endl;
         return;
@@ -21,13 +21,11 @@ void TestProcessPool()
     // Are we a child?
     if(procPool.IsChild())
     {
-        // Randomize starting point of rand() based on child process id
-        srand(getpid());
-
-        for(int i=0; i<30; i++)
+        for(int i = 0; i < 20; i++)
         {
             usleep((random() % 5) * 1000); // Add a random 0-4 ms delay
-            std::cout << "[pid=" << getpid() << "] Do something... " << i << std::endl;
+            std::cout << "[" << procPool.GetChildIndex() << "][pid=" << getpid() << "]"
+                    << " Do something... " << i << std::endl;
         }
 
         procPool.Exit(true);
@@ -62,14 +60,14 @@ void TestProcessQueue()
 
     // Create process queue
     ProcessQueue<Args> procQueue;
-    if(!procQueue.Create(8, fptr))  // process#
+    if(!procQueue.Create(4, fptr))  // process#
     {
         std::cout << ">>> " << __func__ << ": ProcessQueue::Create() failed" << std::endl;
         return;
     }
 
     // Post requests to process queue
-    for(int i = 0; i < 1000; i++)
+    for(int i = 0; i < 20; i++)
     {
         Args args(i);
         procQueue.Post(args);
@@ -77,10 +75,24 @@ void TestProcessQueue()
 
     // Wait until all requests completed
     procQueue.WaitForCompletion();
-    procQueue.Destroy();
+
+    // Wait a little and all more request
+    std::cout << ">>> " << __func__ << ": End Of TestProcessQueue part 1" << std::endl;
+
+    sleep(1);
+
+    // Post more requests to process queue
+    for(int i = 0; i < 10; i++)
+    {
+        Args args(i);
+        procQueue.Post(args);
+    }
+
+    // Wait until all requests completed
+    procQueue.WaitForCompletion();
 
     // We are done with Process Queue test
-    std::cout << ">>> " << __func__ << ": End Of TestProcessQueue" << std::endl;
+    std::cout << ">>> " << __func__ << ": End Of TestProcessQueue part 2" << std::endl;
 }
 
 int main()
