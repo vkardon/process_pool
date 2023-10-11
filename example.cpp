@@ -12,7 +12,7 @@ void TestProcessPool()
     // Note: Create() is blocked for a parent process, it doesn't 
     // return until all child processes stopped.
     ProcessPool procPool;
-    if(!procPool.Create(4)) // process#
+    if(!procPool.Create(4)) // 4 processes
     {
         std::cout << ">>> " << __func__ << ": ProcessPool::Create() failed" << std::endl;
         return;
@@ -21,6 +21,7 @@ void TestProcessPool()
     // Are we a child?
     if(procPool.IsChild())
     {
+        // Do something here...
         for(int i = 0; i < 20; i++)
         {
             usleep((random() % 5) * 1000); // Add a random 0-4 ms delay
@@ -28,6 +29,7 @@ void TestProcessPool()
                     << " Do something... " << i << std::endl;
         }
 
+        // Exit child process
         procPool.Exit(true);
     }
 
@@ -54,17 +56,19 @@ void TestProcessQueue()
     // This it routine that will be executed by child processes
     void (*fptr)(const Args&) = [](const Args& args)
     {
+        // Do something here...
         usleep((random() % 5) * 1000); // Add a random 0-4 ms delay
         std::cout << "[pid=" << getpid() << "] Got request: " << args.number << std::endl;
     };
 
     // Create process queue
     ProcessQueue<Args> procQueue;
-    if(!procQueue.Create(4, fptr))  // process#
+    if(!procQueue.Create(4, fptr))  // 4 processes
     {
         std::cout << ">>> " << __func__ << ": ProcessQueue::Create() failed" << std::endl;
         return;
     }
+    // At this point we have a queue of child processes that are waiting for requests
 
     // Post requests to process queue
     for(int i = 0; i < 20; i++)
@@ -75,11 +79,7 @@ void TestProcessQueue()
 
     // Wait until all requests completed
     procQueue.WaitForCompletion();
-
-    // Wait a little and all more request
     std::cout << ">>> " << __func__ << ": End Of TestProcessQueue part 1" << std::endl;
-
-    sleep(1);
 
     // Post more requests to process queue
     for(int i = 0; i < 10; i++)
