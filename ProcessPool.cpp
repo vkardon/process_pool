@@ -164,7 +164,7 @@ bool ProcessPool::Fork(int totalChildren, int maxConcurrentChildren)
     if(!result)
     {
         // Something went wrong
-        KillAll();         // Terminate children we've started
+        KillAll();      // Terminate children we've started
         PostFork();     // Restore the original signal handlers
     }
     else
@@ -174,7 +174,11 @@ bool ProcessPool::Fork(int totalChildren, int maxConcurrentChildren)
 
         // Wait for all children to complete if we have to
         if(mWaitForAll)
+        {
             result = WaitForAll();
+            KillAll();  // Terminate idle children processes
+            PostFork(); // Restore the original signal handlers
+        }
     }
 
     return result;
@@ -206,11 +210,6 @@ bool ProcessPool::WaitForAll()
         OnNotify(NOTIFY_TYPE::CHILDREN_DONE);
     }
 
-    // Terminate idle children processes (or running processes if we crashed)
-    KillAll();
-
-    // Restore the original signal handlers
-    PostFork();
     return !isCrashed;
 }
 

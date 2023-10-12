@@ -20,7 +20,7 @@ void TestProcessPool()
         return;
     }
 
-    // Are we a child?
+    // Are we a child process?
     if(procPool.IsChild())
     {
         // Do something here...
@@ -44,25 +44,25 @@ void TestProcessQueue()
 {
     std::cout << ">>> " << __func__ << ": Beginning of ProcessQueue test" << std::endl;
 
-    // Arguments to be send to the routine that will be executed
-    // by child processes. 
-    // Note: Arguments will be copied to a shared memory in order
-    // to be accessable by all processes. Don't include complex 
-    // types that internally allocates memory since that allocation(s)
-    // might be inaccessible in child processes.
+    // Arguments for the routine that will be executed by child processes. 
+    // Note: Arguments will be copied to a shared memory in order to be accessable
+    // in a child process. Don't include complex types that internally allocates
+    // memory since that allocation(s) might not be accessible in child process.
     struct Args
     {
         Args() = default;
-        Args(int numberIn) : number(numberIn) {}
-        int number{0};
+        Args(int countIn, const char* nameIn)
+            : count(countIn) { strncpy(name, nameIn, sizeof(name)-1); }
+        int count{0};
+        char name[32]{};
     };
 
     // This it routine that will be executed by child processes
-    void (*fptr)(const Args&) = [](const Args& args)
+    auto fptr = [](const Args& args)
     {
         // Do something here...
         usleep((random() % 5) * 1000); // Add a random 0-4 ms delay
-        std::cout << "[pid=" << getpid() << "] Got request: " << args.number << std::endl;
+        std::cout << "[pid=" << getpid() << "] Got request: " << args.count << " '" << args.name << "'" << std::endl;
     };
 
     // Create process queue
@@ -77,7 +77,7 @@ void TestProcessQueue()
     // Post requests to process queue
     for(int i = 0; i < 20; i++)
     {
-        Args args(i);
+        Args args(i, "hello1");
         procQueue.Post(args);
     }
 
@@ -88,7 +88,7 @@ void TestProcessQueue()
     // Post more requests to process queue
     for(int i = 0; i < 10; i++)
     {
-        Args args(i);
+        Args args(i, "hello2");
         procQueue.Post(args);
     }
 

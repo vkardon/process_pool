@@ -106,14 +106,14 @@ private:
     // Parent process id
     pid_t mParentPID = 0;
 
-    // Shared memory array that holds children completion status.
-    unsigned char* mIsChildDone = nullptr;
-    size_t mIsChildDoneSize = 0;            // Size of allocated shared memory
-
     // Old (previous) SIGCHLD signal handler
     sighandler_t mOld_SIGCHLD_handler = nullptr;
 
 protected:
+    // Shared memory array that holds children completion status.
+    unsigned char* mIsChildDone = nullptr;
+    size_t mIsChildDoneSize = 0;            // Size of allocated shared memory
+
     // All forked children processes PIDs and running status
     std::vector<ChildPID> mChildrenPIDs;
 

@@ -100,6 +100,7 @@ private:
         Node* tail{nullptr};
         Node* free{nullptr};
         bool stop{false};
+        bool hasMore{true};
     };
 
     RequestQueue* mRequestQueue{nullptr};
@@ -145,6 +146,11 @@ bool ProcessQueue<ARGS>::Create(int procCount, void (*fptr)(const ARGS&))
         {
             usleep(SLEEP_USEC); // sleep SLEEP_USEC milliseconds and check again
         }
+
+        // Update this child process "Done" status:
+        // 0 - still busy
+        // 1 - done with this run
+        mIsChildDone[GetChildIndex()] = (mRequestQueue->hasMore ? 0 : 1);
     }
 
     // Exit child process
@@ -318,7 +324,8 @@ bool ProcessQueue<ARGS>::WaitForCompletion()
     assert(IsParent());
 
     // Loop until no request left in Request Queue
-    for(useconds_t delay = 10000 /*10 ms*/; ; usleep(delay))
+    bool keepWaiting = true;
+    for(useconds_t delay = 10000 /*10 ms*/; keepWaiting; usleep(delay))
     {
         // Check for any crash children
         if(HasCrashedChildren())
@@ -326,16 +333,40 @@ bool ProcessQueue<ARGS>::WaitForCompletion()
             // TODO: What should we do if we have a crashed child?
         }
 
-        QueueLock lock(mRequestQueue->lock);
-        if(!lock)
         {
-            ERRORMSG("Failed to obtain Request Queue lock");
-            return false;
+            QueueLock lock(mRequestQueue->lock);
+            if(!lock)
+            {
+                ERRORMSG("Failed to obtain Request Queue lock");
+                return false;
+            }
+
+            // Once request queue is empty, reset hasMore flag
+            if(!mRequestQueue->head)
+                mRequestQueue->hasMore = false;
         }
 
-        if(!mRequestQueue->head)
-            return true;
+        // Note: we no longer need QueueLock
+        if(!mRequestQueue->hasMore)
+        {
+            // Wait for child processes to complete
+            keepWaiting = false;    // Assuming all processes are done
+            size_t childrenCount = mChildrenPIDs.size();
+            for(size_t childIndex = 0; childIndex < childrenCount; childIndex++)
+            {
+                if(mIsChildDone[childIndex] == 0)
+                {
+                    // Got child process that is still busy...keep waiting
+                    keepWaiting = true;
+                    break;
+                }
+            }
+        }
     }
+
+    // All child processes completed. Reset for another run.
+    mRequestQueue->hasMore = true;
+    return true;
 }
 
 template<class ARGS>
