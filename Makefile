@@ -6,7 +6,7 @@ EXE = app
 PROJECT_HOME = .
 OBJ_DIR = $(PROJECT_HOME)/_obj
 
-SRCS = $(PROJECT_HOME)/example.cpp \
+SRCS = $(PROJECT_HOME)/Example.cpp \
        $(PROJECT_HOME)/ProcessPool.cpp
 
 # Include directories
@@ -38,14 +38,11 @@ $(OBJ_DIR)/%.o: $(PROJECT_HOME)/%.cpp Makefile
 	$(CC) -c -MP -MMD $(CFLAGS) $(INCS) -o $(OBJ_DIR)/$*.o $<
 	
 # Delete all intermediate files
-clean: 
-#	@echo OBJS = $(OBJS)
+clean clear:
 	rm -rf $(EXE) $(OBJ_DIR) core
 
-#
 # Read the dependency files.
 # Note: use '-' prefix to don't display error or warning
 # if include file do not exist (just remade it)
-#
 -include $(OBJS:.o=.d)
 

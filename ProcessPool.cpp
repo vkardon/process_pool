@@ -256,7 +256,7 @@ void ProcessPool::Exit(bool status, bool keepIdle /*= false*/)
     }
 
     // Exit child with _exit() to tell the OS to ignore the its completion
-    _exit(1);
+    _exit(status ? 0 : 1);
 }
 
 /*-------------------------------------------------------------------------*
