@@ -259,10 +259,7 @@ void ProcessPool::Exit(bool status, bool keepIdle /*= false*/)
     _exit(status ? 0 : 1);
 }
 
-/*-------------------------------------------------------------------------*
-| Name:  KillAll()
-| Desc:  Kill all running children and wait for them to exit.
-*--------------------------------------------------------------------------*/
+// Kill all running children and wait for them to exit
 void ProcessPool::KillAll()
 {
     if(mChildrenPIDs.empty())
