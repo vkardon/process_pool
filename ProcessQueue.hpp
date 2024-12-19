@@ -173,7 +173,7 @@ bool ProcessQueue<ARGS>::Post(const ARGS& args)
     QueueLock lock(mRequestQueue->lock);
     if(!lock)
     {
-        ERRORMSG("Failed to obtain Request Queue lock");
+        PROCESS_POOL_ERROR("Failed to obtain Request Queue lock");
         return false;
     }
 
@@ -191,7 +191,7 @@ bool ProcessQueue<ARGS>::Post(const ARGS& args)
         size_t availableSize = mRequestQueueSize - (mRequestQueue->fillPtr - (unsigned char*)mRequestQueue);
         if(availableSize < sizeof(Node))
         {
-            ERRORMSG("Request Queue is out of memory");
+            PROCESS_POOL_ERROR("Request Queue is out of memory");
             return false;
         }
 
@@ -228,7 +228,7 @@ typename ProcessQueue<ARGS>::Node* ProcessQueue<ARGS>::GetNextRequest()
     QueueLock lock(mRequestQueue->lock);
     if(!lock)
     {
-        ERRORMSG("Failed to obtain Request Queue lock");
+        PROCESS_POOL_ERROR("Failed to obtain Request Queue lock");
         return nullptr;
     }
 
@@ -257,7 +257,7 @@ void ProcessQueue<ARGS>::FreeRequest(ProcessQueue::Node* node)
     QueueLock lock(mRequestQueue->lock);
     if(!lock)
     {
-        ERRORMSG("Failed to obtain Request Queue lock");
+        PROCESS_POOL_ERROR("Failed to obtain Request Queue lock");
         return;
     }
 
@@ -277,7 +277,7 @@ bool ProcessQueue<ARGS>::CreateRequestQueue()
 
     if(mRequestQueueSize == 0)
     {
-        ERRORMSG("Invalid (0) Request Queue size");
+        PROCESS_POOL_ERROR("Invalid (0) Request Queue size");
         return false;
     }
 
@@ -288,7 +288,7 @@ bool ProcessQueue<ARGS>::CreateRequestQueue()
     if(addr == MAP_FAILED)
     {
         std::string errmsg = strerror(errno);
-        ERRORMSG("mmap for " << mRequestQueueSize << " bytes failed with error \"" << errmsg << "\"");
+        PROCESS_POOL_ERROR("mmap for " << mRequestQueueSize << " bytes failed with error \"" << errmsg << "\"");
         return false;
     }
 
@@ -311,7 +311,7 @@ void ProcessQueue<ARGS>::DeleteRequestQueue()
         if(::munmap(mRequestQueue, mRequestQueueSize) < 0)
         {
             std::string errmsg = strerror(errno);
-            ERRORMSG("munmap failed with error \"" << errmsg << "\"");
+            PROCESS_POOL_ERROR("munmap failed with error \"" << errmsg << "\"");
         }
     }
 
@@ -337,7 +337,7 @@ bool ProcessQueue<ARGS>::WaitForCompletion()
             QueueLock lock(mRequestQueue->lock);
             if(!lock)
             {
-                ERRORMSG("Failed to obtain Request Queue lock");
+                PROCESS_POOL_ERROR("Failed to obtain Request Queue lock");
                 return false;
             }
 
@@ -407,7 +407,7 @@ bool ProcessQueue<ARGS>::HasCrashedChildren()
         }
 
         // The child has crashed
-        ERRORMSG("Child " << childIndex << " (" << childPID << ") has crashed");
+        PROCESS_POOL_ERROR("Child " << childIndex << " (" << childPID << ") has crashed");
 
         // TODO: Should we have a different CHILD_STATUS for a crashed child?
         mChildrenPIDs[childIndex].status = CHILD_STATUS::DONE;

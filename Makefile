@@ -6,8 +6,7 @@ EXE = app
 PROJECT_HOME = .
 OBJ_DIR = $(PROJECT_HOME)/_obj
 
-SRCS = $(PROJECT_HOME)/Example.cpp \
-       $(PROJECT_HOME)/ProcessPool.cpp
+SRCS = $(PROJECT_HOME)/Example.cpp
 
 # Include directories
 INCS = -I$(PROJECT_HOME)
