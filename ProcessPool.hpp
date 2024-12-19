@@ -625,7 +625,4 @@ inline bool ProcessPool::IsProcessAlive(pid_t pid)
     return (kill(pid, 0) == 0);
 }
 
-
-
-
 #endif // _PROCESS_POOL_HPP_
