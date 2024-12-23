@@ -1,6 +1,6 @@
 
 # Executable to build
-EXE = copy 
+EXE = app
 DEBUG = true
 
 # Sources
