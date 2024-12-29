@@ -112,7 +112,7 @@ private:
 protected:
     // Shared memory array that holds children completion status.
     unsigned char* mIsChildDone = nullptr;
-    size_t mIsChildDoneSize = 0;            // Size of allocated shared memory
+    size_t mIsChildDoneSize = 0;    // Size of allocated shared memory
 
     // All forked children processes PIDs and running status
     std::vector<ChildPID> mChildrenPIDs;
@@ -173,34 +173,26 @@ inline bool ProcessPool::PreFork(int totalChildren)
     // Delete children completion status array since number of children might changes
     DeleteCompletionStatusArray();
 
-    bool result = false; // Initially
-    while(true)
+    // Ignore the SIGCHLD to prevent children from transforming into
+    // zombies so we don't need to wait and reap them.
+    if(!SetSigAction(SIGCHLD, SIG_IGN, &mOld_SIGCHLD_handler))
     {
-        // Ignore the SIGCHLD to prevent children from transforming into
-        // zombies so we don't need to wait and reap them.
-        if(!SetSigAction(SIGCHLD, SIG_IGN, &mOld_SIGCHLD_handler))
-        {
-            std::string errmsg = strerror(errno);
-            PROCESS_POOL_ERROR("sigaction(SIGCHLD) failed because " << errmsg);
-            break;
-        }
-
-        // Create children completion status array in shared memory
-        if(!CreateCompletionStatusArray(totalChildren))
-        {
-            PROCESS_POOL_ERROR("Couldn't create children completion status array in shared memory");
-            break;
-        }
-
-        result = true;
-        break;
+        std::string errmsg = strerror(errno);
+        PROCESS_POOL_ERROR("sigaction(SIGCHLD) failed because " << errmsg);
+    }
+    // Create children completion status array in shared memory
+    else if(!CreateCompletionStatusArray(totalChildren))
+    {
+        PROCESS_POOL_ERROR("Couldn't create children completion status array in shared memory");
+    }
+    else
+    {
+        return true; // Success
     }
 
     // If we failed then clean up
-    if(!result)
-        PostFork();
-
-    return result;
+    PostFork();
+    return false;
 }
 
 inline void ProcessPool::PostFork()
