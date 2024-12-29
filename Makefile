@@ -55,7 +55,7 @@ $(OBJ_DIR)/%.o: $(PROJECT_HOME)/%.cpp Makefile
 	$(CC) -c -MP -MMD $(CFLAGS) $(INCS) -o $(OBJ_DIR)/$*.o $<
 	
 # Delete all intermediate files
-clean: 
+clean clear: 
 #	@echo OBJS = $(OBJS)
 	rm -rf $(EXE) $(OBJ_DIR) core
 

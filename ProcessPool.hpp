@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <string>
+#include <iostream>     // std::cout
 #include <signal.h>     // sighandler_t
 
 //
@@ -153,7 +154,6 @@ protected:
 #include <sys/stat.h>       // stat
 #include <assert.h>         // assert
 #include <sys/mman.h>       // mmap
-#include <iostream>         // std::cout
 
 inline ProcessPool::~ProcessPool()
 {
