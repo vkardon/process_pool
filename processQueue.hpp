@@ -1,5 +1,5 @@
 //
-// ProcessQueue.hpp
+// processQueue.hpp
 //
 #ifndef _PROCESS_QUEUE_HPP_
 #define _PROCESS_QUEUE_HPP_
@@ -9,7 +9,7 @@
 #include <iostream>         // std::cout
 #include <sys/mman.h>       // mmap()
 #include <time.h>           // time()
-#include "ProcessPool.hpp"
+#include "processPool.hpp"
 
 //
 // Utility class to create queue of worker processes

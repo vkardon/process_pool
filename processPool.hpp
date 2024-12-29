@@ -1,5 +1,5 @@
 //
-// ProcessPool.hpp
+// processPool.hpp
 //
 #ifndef _PROCESS_POOL_HPP_
 #define _PROCESS_POOL_HPP_

@@ -4,8 +4,8 @@
 #include <iostream>
 #include <string.h>
 #include <unistd.h>
-#include "ProcessPool.hpp"
-#include "ProcessQueue.hpp"
+#include "processPool.hpp"
+#include "processQueue.hpp"
 
 void TestProcessPool()
 {
